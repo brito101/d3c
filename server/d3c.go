@@ -145,23 +145,25 @@ func startListener(port string) {
 				if agentRegistration(message.AgentID) {
 
 					if commandResponse(*message) {
-						log.Println("Agent Message: ", message.AgentID)
+						log.Println("Host Message: ", message.AgentHostname)
 
 						//Print response
 						for _, v := range message.Commands {
-							log.Println("Request: ", v.Request)
-							log.Println("Response: ", v.Response)
+							log.Println("Command: ", v.Request)
+							println(v.Response)
 						}
 					}
+					// Send queue commands to agent
+					gob.NewEncoder(channel).Encode(fieldAgents[agentFieldPosition(message.AgentID)])
+					//Clear command list
+					fieldAgents[agentFieldPosition(message.AgentID)].Commands = []global.Command{}
 				} else {
 					log.Println("New connection: ", channel.RemoteAddr().String())
 					log.Println("Agent ID: ", message.AgentID)
 
 					fieldAgents = append(fieldAgents, *message)
+					gob.NewEncoder(channel).Encode(message)
 				}
-
-				// Send queue commands to agent
-				gob.NewEncoder(channel).Encode(fieldAgents[agentFieldPosition(message.AgentID)])
 			}
 		}
 	}
