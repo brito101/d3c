@@ -8,6 +8,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"strings"
 )
 
 var (
@@ -21,32 +22,6 @@ func main() {
 	go startListener("9090")
 
 	cliHandler()
-}
-
-func showHandler(command []string) {
-	if len(command) > 1 {
-		switch command[1] {
-		case "agents":
-			for _, v := range fieldAgents {
-				println("ID Agent: " + v.AgentID + " -> " + v.AgentHostname + "@" + v.AgentCWD)
-			}
-		default:
-			log.Println("The selected parameter does not exist")
-		}
-	}
-}
-
-func selectHandler(command []string) {
-	if len(command) > 1 {
-		if agentRegistration(command[1]) {
-			selectedAgent = command[1]
-		} else {
-			log.Println("The selected agent is not in the field.")
-			log.Println("To list agents in the field type: show agents")
-		}
-	} else {
-		selectedAgent = ""
-	}
 }
 
 func cliHandler() {
@@ -67,8 +42,14 @@ func cliHandler() {
 			switch baseCommando {
 			case "show":
 				showHandler(separateCommand)
+			case "sleep":
+				sleep(fullCommand)
 			case "select":
 				selectHandler(separateCommand)
+			case "send":
+				sendFile(separateCommand)
+			case "get":
+				getFile(fullCommand)
 			default:
 				if selectedAgent != "" {
 					command := &global.Command{}
@@ -148,15 +129,21 @@ func startListener(port string) {
 						log.Println("Host Message: ", message.AgentHostname)
 
 						//Print response
-						for _, v := range message.Commands {
+						for i, v := range message.Commands {
 							log.Println("Command: ", v.Request)
 							println(v.Response)
+
+							if helpers.CommandsSplit(v.Request)[0] == "get" &&
+								message.Commands[i].File.Error == false {
+								saveFile(message.Commands[i].File)
+							}
 						}
 					}
 					// Send queue commands to agent
 					gob.NewEncoder(channel).Encode(fieldAgents[agentFieldPosition(message.AgentID)])
 					//Clear command list
 					fieldAgents[agentFieldPosition(message.AgentID)].Commands = []global.Command{}
+
 				} else {
 					log.Println("New connection: ", channel.RemoteAddr().String())
 					log.Println("Agent ID: ", message.AgentID)
@@ -166,5 +153,91 @@ func startListener(port string) {
 				}
 			}
 		}
+	}
+}
+
+// Commands
+func showHandler(command []string) {
+	if len(command) > 1 {
+		switch command[1] {
+		case "agents":
+			for _, v := range fieldAgents {
+				println("ID Agent: " + v.AgentID + " -> " + v.AgentHostname + "@" + v.AgentCWD)
+			}
+		default:
+			log.Println("The selected parameter does not exist")
+		}
+	}
+}
+
+func sleep(fullCommand string) {
+	separateCommand := helpers.CommandsSplit(fullCommand)
+
+	if len(separateCommand) > 1 && selectedAgent != "" {
+		commandSend := &global.Command{}
+		commandSend.Request = fullCommand
+
+		fieldAgents[agentFieldPosition(selectedAgent)].Commands = append(fieldAgents[agentFieldPosition(selectedAgent)].Commands, *commandSend)
+	} else {
+		log.Println("Choose how many seconds the agent should wait!")
+	}
+}
+
+func selectHandler(command []string) {
+	if len(command) > 1 {
+		if agentRegistration(command[1]) {
+			selectedAgent = command[1]
+		} else {
+			log.Println("The selected agent is not in the field.")
+			log.Println("To list agents in the field type: show agents")
+		}
+	} else {
+		selectedAgent = ""
+	}
+}
+
+func sendFile(separateCommand []string) {
+	if len(separateCommand) > 1 && selectedAgent != "" {
+		file := &global.File{}
+		file.Name = separateCommand[1]
+
+		var err error
+		file.Content, err = os.ReadFile(file.Name)
+
+		commandSend := &global.Command{}
+		commandSend.Request = separateCommand[0]
+		commandSend.File = *file
+		if err != nil {
+			log.Println("Open file error: ", err.Error())
+		} else {
+			fieldAgents[agentFieldPosition(selectedAgent)].Commands = append(fieldAgents[agentFieldPosition(selectedAgent)].Commands, *commandSend)
+		}
+
+	} else {
+		log.Println("Specify the file to be uploaded!")
+	}
+}
+
+func getFile(fullCommand string) {
+	separateCommand := helpers.CommandsSplit(fullCommand)
+
+	if len(separateCommand) > 1 && selectedAgent != "" {
+
+		commandSend := &global.Command{}
+		commandSend.Request = fullCommand
+
+		fieldAgents[agentFieldPosition(selectedAgent)].Commands = append(fieldAgents[agentFieldPosition(selectedAgent)].Commands, *commandSend)
+
+	} else {
+		log.Println("Specify the file to be download!")
+	}
+}
+
+func saveFile(file global.File) {
+	fileName := strings.Split(file.Name, "/")
+	err := os.WriteFile(fileName[len(fileName)-1], file.Content, 0644)
+
+	if err != nil {
+		log.Println("Get file error: ", err.Error())
 	}
 }

