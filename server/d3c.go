@@ -34,6 +34,7 @@ func cliHandler() {
 
 		reader := bufio.NewReader(os.Stdin)
 		fullCommand, _ := reader.ReadString('\n')
+		fullCommand = strings.TrimSuffix(strings.TrimSuffix(fullCommand, "\r"), "\n")
 
 		separateCommand := helpers.CommandsSplit(fullCommand)
 		baseCommando := separateCommand[0]
